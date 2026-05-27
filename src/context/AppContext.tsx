@@ -6,7 +6,8 @@ import {
   updatePassword,
   type User,
 } from "firebase/auth";
-import { auth } from "../firebase";
+import { doc, getDoc, setDoc, onSnapshot } from "firebase/firestore";
+import { auth, db } from "../firebase";
 import type { AppData, Biodata, Project } from "../types";
 
 const defaultBiodata: Biodata = {
@@ -59,44 +60,59 @@ const defaultProjects: Project[] = [
   },
 ];
 
-const STORAGE_KEY = "portfolio_app_data_v1";
+const DOC_PATH = "portfolio/main";
 
 interface AppContextType {
   data: AppData;
   isOwner: boolean;
   currentUser: User | null;
+  loading: boolean;
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
-  updateBiodata: (b: Biodata) => void;
-  addProject: (p: Omit<Project, "id">) => void;
-  updateProject: (id: string, p: Partial<Project>) => void;
-  deleteProject: (id: string) => void;
+  updateBiodata: (b: Biodata) => Promise<void>;
+  addProject: (p: Omit<Project, "id">) => Promise<void>;
+  updateProject: (id: string, p: Partial<Project>) => Promise<void>;
+  deleteProject: (id: string) => Promise<void>;
   changePassword: (newPass: string) => Promise<boolean>;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<AppData>(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) return JSON.parse(stored);
-    } catch {}
-    return { biodata: defaultBiodata, projects: defaultProjects };
-  });
-
+  const [data, setData] = useState<AppData>({ biodata: defaultBiodata, projects: defaultProjects });
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isOwner, setIsOwner] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(true);
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  }, [data]);
-
+  // Listen to auth state
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
       setIsOwner(!!user);
     });
+    return () => unsubscribe();
+  }, []);
+
+  // Real-time listener for Firestore data
+  useEffect(() => {
+    const docRef = doc(db, DOC_PATH);
+
+    // Pehle check karo data exist karta hai ya nahi
+    getDoc(docRef).then((snap) => {
+      if (!snap.exists()) {
+        // Agar data nahi hai to default save karo
+        setDoc(docRef, { biodata: defaultBiodata, projects: defaultProjects });
+      }
+    });
+
+    // Real-time listener
+    const unsubscribe = onSnapshot(docRef, (snap) => {
+      if (snap.exists()) {
+        setData(snap.data() as AppData);
+      }
+      setLoading(false);
+    });
+
     return () => unsubscribe();
   }, []);
 
@@ -131,29 +147,61 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const updateBiodata = (b: Biodata) => {
-    setData((d) => ({ ...d, biodata: b }));
+  const saveToFirestore = async (newData: AppData) => {
+    try {
+      const docRef = doc(db, DOC_PATH);
+      await setDoc(docRef, newData);
+    } catch (error) {
+      console.error("Save error:", error);
+    }
   };
 
-  const addProject = (p: Omit<Project, "id">) => {
+  const updateBiodata = async (b: Biodata) => {
+    const newData = { ...data, biodata: b };
+    setData(newData);
+    await saveToFirestore(newData);
+  };
+
+  const addProject = async (p: Omit<Project, "id">) => {
     const newP: Project = { ...p, id: `p_${Date.now()}` };
-    setData((d) => ({ ...d, projects: [newP, ...d.projects] }));
+    const newData = { ...data, projects: [newP, ...data.projects] };
+    setData(newData);
+    await saveToFirestore(newData);
   };
 
-  const updateProject = (id: string, p: Partial<Project>) => {
-    setData((d) => ({
-      ...d,
-      projects: d.projects.map((pr) => (pr.id === id ? { ...pr, ...p } : pr)),
-    }));
+  const updateProject = async (id: string, p: Partial<Project>) => {
+    const newData = {
+      ...data,
+      projects: data.projects.map((pr) => (pr.id === id ? { ...pr, ...p } : pr)),
+    };
+    setData(newData);
+    await saveToFirestore(newData);
   };
 
-  const deleteProject = (id: string) => {
-    setData((d) => ({ ...d, projects: d.projects.filter((p) => p.id !== id) }));
+  const deleteProject = async (id: string) => {
+    const newData = {
+      ...data,
+      projects: data.projects.filter((p) => p.id !== id),
+    };
+    setData(newData);
+    await saveToFirestore(newData);
   };
 
   return (
     <AppContext.Provider
-      value={{ data, isOwner, currentUser, login, logout, updateBiodata, addProject, updateProject, deleteProject, changePassword }}
+      value={{
+        data,
+        isOwner,
+        currentUser,
+        loading,
+        login,
+        logout,
+        updateBiodata,
+        addProject,
+        updateProject,
+        deleteProject,
+        changePassword,
+      }}
     >
       {children}
     </AppContext.Provider>
