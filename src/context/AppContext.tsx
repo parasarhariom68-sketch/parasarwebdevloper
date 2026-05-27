@@ -1,4 +1,12 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import {
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+  updatePassword,
+  type User,
+} from "firebase/auth";
+import { auth } from "../firebase";
 import type { AppData, Biodata, Project } from "../types";
 
 const defaultBiodata: Biodata = {
@@ -52,18 +60,18 @@ const defaultProjects: Project[] = [
 ];
 
 const STORAGE_KEY = "portfolio_app_data_v1";
-const AUTH_KEY = "portfolio_auth_v1";
 
 interface AppContextType {
   data: AppData;
   isOwner: boolean;
-  login: (username: string, password: string) => boolean;
-  logout: () => void;
+  currentUser: User | null;
+  login: (email: string, password: string) => Promise<boolean>;
+  logout: () => Promise<void>;
   updateBiodata: (b: Biodata) => void;
   addProject: (p: Omit<Project, "id">) => void;
   updateProject: (id: string, p: Partial<Project>) => void;
   deleteProject: (id: string) => void;
-  changePassword: (newPass: string) => void;
+  changePassword: (newPass: string) => Promise<boolean>;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -77,32 +85,50 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return { biodata: defaultBiodata, projects: defaultProjects };
   });
 
-  const [isOwner, setIsOwner] = useState<boolean>(() => {
-    return localStorage.getItem(AUTH_KEY) === "true";
-  });
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isOwner, setIsOwner] = useState<boolean>(false);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   }, [data]);
 
-  const login = (username: string, password: string): boolean => {
-    const storedUser = localStorage.getItem("owner_user") || "admin";
-    const storedPass = localStorage.getItem("owner_pass") || "admin123";
-    if (username === storedUser && password === storedPass) {
-      setIsOwner(true);
-      localStorage.setItem(AUTH_KEY, "true");
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+      setIsOwner(!!user);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const login = async (email: string, password: string): Promise<boolean> => {
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
       return true;
+    } catch (error) {
+      console.error("Login error:", error);
+      return false;
     }
-    return false;
   };
 
-  const logout = () => {
-    setIsOwner(false);
-    localStorage.removeItem(AUTH_KEY);
+  const logout = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
   };
 
-  const changePassword = (newPass: string) => {
-    localStorage.setItem("owner_pass", newPass);
+  const changePassword = async (newPass: string): Promise<boolean> => {
+    try {
+      if (currentUser) {
+        await updatePassword(currentUser, newPass);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error("Change password error:", error);
+      return false;
+    }
   };
 
   const updateBiodata = (b: Biodata) => {
@@ -127,7 +153,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   return (
     <AppContext.Provider
-      value={{ data, isOwner, login, logout, updateBiodata, addProject, updateProject, deleteProject, changePassword }}
+      value={{ data, isOwner, currentUser, login, logout, updateBiodata, addProject, updateProject, deleteProject, changePassword }}
     >
       {children}
     </AppContext.Provider>
