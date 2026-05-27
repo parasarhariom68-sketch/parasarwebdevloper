@@ -15,19 +15,18 @@ export default function Login() {
     return null;
   }
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
 
-    setTimeout(() => {
-      if (login(username, password)) {
-        navigate("/dashboard");
-      } else {
-        setError("ACCESS DENIED — Invalid credentials");
-        setLoading(false);
-      }
-    }, 800);
+    const success = await login(username, password);
+    if (success) {
+      navigate("/dashboard");
+    } else {
+      setError("ACCESS DENIED — Invalid credentials");
+      setLoading(false);
+    }
   };
 
   return (
@@ -69,15 +68,15 @@ export default function Login() {
             <form onSubmit={handleSubmit} className="space-y-4 relative">
               <div>
                 <label className="block text-[10px] text-cyan-400/50 tracking-[0.2em] uppercase mb-2 font-mono">
-                  &gt; USERNAME
+                  &gt; EMAIL
                 </label>
                 <input
-                  type="text"
+                  type="email"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   required
                   className="data-input"
-                  placeholder="Enter username..."
+                  placeholder="Enter email..."
                 />
               </div>
 
@@ -126,23 +125,15 @@ export default function Login() {
               </button>
             </form>
 
-            {/* Default credentials */}
+            {/* Info box */}
             <div className="mt-6 p-4 rounded-xl bg-cyan-500/5 border border-cyan-500/15">
               <div className="flex items-center gap-2 mb-2">
-                <span className="text-[10px] text-cyan-400/30">💡</span>
-                <span className="text-[10px] text-cyan-400/40 tracking-wider font-mono">DEFAULT_CREDENTIALS</span>
+                <span className="text-[10px] text-cyan-400/30">🔒</span>
+                <span className="text-[10px] text-cyan-400/40 tracking-wider font-mono">SECURE_LOGIN</span>
               </div>
-              <div className="space-y-1 font-mono text-[10px]">
-                <p className="text-cyan-300/50">
-                  <span className="text-cyan-400/40">USER:</span> admin
-                </p>
-                <p className="text-cyan-300/50">
-                  <span className="text-cyan-400/40">PASS:</span> admin123
-                </p>
-                <p className="text-cyan-400/25 mt-2 italic font-sans text-[9px]">
-                  Login ke baad dashboard se password change kar sakte hain
-                </p>
-              </div>
+              <p className="text-cyan-400/40 text-[10px] font-sans italic">
+                Login with your Firebase email and password
+              </p>
             </div>
           </div>
         </div>
